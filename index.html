@@ -1,0 +1,246 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>BREATH₂ スコア計算ツール v2（配点修正版）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", "Helvetica Neue", Arial, sans-serif; line-height: 1.6; margin: 2rem; }
+    h1 { font-size: 1.6rem; margin-bottom: .5rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.6rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    label { display: block; margin: .25rem 0 .4rem; }
+    input[type="number"] { width: 100%; padding: .4rem; box-sizing: border-box; }
+    .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    .muted { opacity: .75; font-size: .9rem; }
+    .result { font-size: 1.2rem; font-weight: 600; }
+    .badge { display: inline-block; padding: .2rem .5rem; border-radius: 999px; border: 1px solid #ccc; font-size: .9rem; }
+    details { margin-top: .5rem; }
+    .footer { margin-top: 2rem; font-size: .9rem; opacity: .85; }
+    .ok { border-color: #b5e0b5; }
+    .warn { border-color: #ffd27f; }
+    .danger { border-color: #ffb5b5; }
+    .controls { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    button { padding:.5rem .8rem; border:1px solid #ccc; border-radius:6px; cursor:pointer; background:#fff; }
+    .tiny { font-size:.85rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <h1>BREATH₂ スコア計算ツール v2（配点修正版）</h1>
+  <p class="muted">Saito Y, et al., 2025 に基づき <strong>AF=1点</strong>、<strong>BNP/NT‑proBNP=2点</strong>、<strong>年齢≥65=2点</strong> に修正。ブラウザのみで動作（外部通信なし）。</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>基本情報</h2>
+      <label>年齢（歳）
+        <input type="number" id="age" min="0" step="1" placeholder="例）72">
+      </label>
+      <div class="row">
+        <label><input type="radio" name="sex" value="male"> 男性</label>
+        <label><input type="radio" name="sex" value="female"> 女性</label>
+      </div>
+      <label class="muted">※ 年齢<span class="badge">≥65歳</span>で<strong>2点</strong></label>
+    </div>
+
+    <div class="card">
+      <h2>既往・臨床</h2>
+      <label><input type="checkbox" id="cad"> 冠動脈疾患の既往（CAD）</label>
+      <label><input type="checkbox" id="af"> 心房細動あり（発作性/持続性）</label>
+    </div>
+
+    <div class="card">
+      <h2>血液検査</h2>
+      <label>BNP（pg/mL）
+        <input type="number" id="bnp" min="0" step="0.1" placeholder="例）60">
+      </label>
+      <label>NT-proBNP（pg/mL）
+        <input type="number" id="ntprobnp" min="0" step="1" placeholder="例）220">
+      </label>
+      <label>ヘモグロビン Hb（g/dL）
+        <input type="number" id="hb" min="0" step="0.1" placeholder="例）11.8">
+      </label>
+      <div class="muted">※ BNP <span class="badge">≥35</span> または NT‑proBNP <span class="badge">≥125</span> で<strong>2点</strong>。貧血は 男性<span class="badge">&lt;13</span> / 女性<span class="badge">&lt;12</span> で<strong>1点</strong>。</div>
+    </div>
+
+    <div class="card">
+      <h2>画像・心電図</h2>
+      <label>心胸郭比 CTR（%）
+        <input type="number" id="ctr" min="0" max="100" step="0.1" placeholder="例）52">
+      </label>
+      <div class="muted">※ CTR <span class="badge">≥50%</span> で<strong>1点</strong></div>
+      <hr>
+      <label><input type="checkbox" id="lvh_manual"> ECGで左室高電位（LVH）あり（手動）</label>
+      <details>
+        <summary class="tiny">もしくは Sokolow‑Lyon 指標で自動判定（RV5 + SV1 ≥ 3.5 mV）</summary>
+        <div class="row">
+          <label>RV5（mV）<input type="number" id="rv5" min="0" step="0.1" placeholder="例）2.2"></label>
+          <label>SV1（mV）<input type="number" id="sv1" min="0" step="0.1" placeholder="例）1.5"></label>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>スコア（自動計算）</h2>
+      <div id="score" class="result">0 / 9 点</div>
+      <div id="risk" class="badge">リスク: 低（推定確率 4%程度）</div>
+      <details>
+        <summary>内訳を表示</summary>
+        <div id="breakdown" class="mono tiny"></div>
+      </details>
+      <div class="controls" style="margin-top:.5rem;">
+        <button id="copy">結果をコピー</button>
+        <button id="reset">リセット</button>
+        <button id="print">印刷/保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>配点（固定）</h2>
+      <p class="muted">本バージョンでは配点は論文記載に合わせて固定です（AF=1, BNP/NT-proBNP=2, 年齢=2, その他=1）。</p>
+      <ul class="tiny">
+        <li>BNP/NT-proBNP：2点</li>
+        <li>年齢 ≥65：2点</li>
+        <li>AF：1点</li>
+        <li>CXR心拡大（CTR ≥50%）：1点</li>
+        <li>CAD既往：1点</li>
+        <li>貧血（男&lt;13/女&lt;12）：1点</li>
+        <li>ECG-LVH（RV5+SV1 ≥3.5 mV または手動）：1点</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <strong>注意：</strong> これは教育・参考用の簡易ツールです。診断は確定しません。<br>
+    リスク解釈（文献報告）：0–3点 低（~4–19%）、4–5点 中（~50%）、6–9点 高（~77–93%）。<br>
+    参考: Saito Y, et al., 2025（Circulation Journal / ニューラルネット構築報告）・群馬大公開資料。
+  </div>
+
+<script>
+function $(id){ return document.getElementById(id); }
+
+function npPositive(){
+  const bnp = parseFloat($("bnp").value);
+  const ntp = parseFloat($("ntprobnp").value);
+  const bnpPos = !isNaN(bnp) && bnp >= 35;
+  const ntpPos = !isNaN(ntp) && ntp >= 125;
+  return bnpPos || ntpPos;
+}
+
+function anemiaPositive(){
+  const hb = parseFloat($("hb").value);
+  const sex = document.querySelector('input[name="sex"]:checked')?.value;
+  if (isNaN(hb) || !sex) return false;
+  if (sex === "male") return hb < 13;
+  if (sex === "female") return hb < 12;
+  return false;
+}
+
+function ctrPositive(){
+  const ctr = parseFloat($("ctr").value);
+  return !isNaN(ctr) && ctr >= 50;
+}
+
+function lvhPositive(){
+  if ($("lvh_manual").checked) return true;
+  const rv5 = parseFloat($("rv5").value);
+  const sv1 = parseFloat($("sv1").value);
+  if (!isNaN(rv5) && !isNaN(sv1)){
+    return (rv5 + sv1) >= 3.5;
+  }
+  return false;
+}
+
+function agePositive(){
+  const age = parseFloat($("age").value);
+  return !isNaN(age) && age >= 65;
+}
+
+function calcScore(){
+  const flags = {
+    age: agePositive(),
+    cad: $("cad").checked,
+    np: npPositive(),
+    anemia: anemiaPositive(),
+    ctr: ctrPositive(),
+    lvh: lvhPositive(),
+    af: $("af").checked,
+  };
+
+  // Fixed weights per Saito et al.
+  const score =
+    (flags.np ? 2 : 0) +
+    (flags.age ? 2 : 0) +
+    (flags.af ? 1 : 0) +
+    (flags.ctr ? 1 : 0) +
+    (flags.cad ? 1 : 0) +
+    (flags.anemia ? 1 : 0) +
+    (flags.lvh ? 1 : 0);
+
+  // Risk category
+  let riskTxt = "低（推定確率 4%程度）";
+  let riskClass = "ok";
+  if (score >= 6){
+    riskTxt = "高（推定確率 77–93% 程度）";
+    riskClass = "danger";
+  } else if (score >= 4){
+    riskTxt = "中（推定確率 50% 程度）";
+    riskClass = "warn";
+  }
+
+  $("score").textContent = `${score} / 9 点`;
+  const riskEl = $("risk");
+  riskEl.textContent = `リスク: ${riskTxt}`;
+  riskEl.className = `badge ${riskClass}`;
+
+  const breakdown = [
+    `年齢 ≥65（2点）: ${flags.age ? "○" : "×"}`,
+    `CAD既往（1点）: ${flags.cad ? "○" : "×"}`,
+    `BNP≥35 or NT-proBNP≥125（2点）: ${flags.np ? "○" : "×"}`,
+    `貧血（男<13/女<12）（1点）: ${flags.anemia ? "○" : "×"}`,
+    `CTR ≥50%（1点）: ${flags.ctr ? "○" : "×"}`,
+    `ECG-LVH（1点）（RV5+SV1 ≥3.5 or 手動）: ${flags.lvh ? "○" : "×"}`,
+    `心房細動（1点）: ${flags.af ? "○" : "×"}`,
+  ].join("\\n");
+  $("breakdown").textContent = breakdown;
+
+  return score;
+}
+
+function copyResult(){
+  const score = calcScore();
+  const payload = { tool: "BREATH2", version: "v2", score: score };
+  navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(()=>{
+    alert("結果をコピーしました。");
+  }).catch(()=>{
+    alert("コピーに失敗しました。");
+  });
+}
+
+function resetAll(){
+  document.querySelectorAll("input").forEach(el=>{
+    if (el.type === "checkbox" || el.type === "radio"){ el.checked = false; }
+    if (el.type === "number"){ el.value = ""; }
+  });
+  calcScore();
+}
+
+["age","bnp","ntprobnp","hb","ctr","rv5","sv1"]
+  .forEach(id=>{ document.getElementById(id).addEventListener("input", calcScore); });
+["cad","af","lvh_manual"].forEach(id=>{
+  document.getElementById(id).addEventListener("change", calcScore);
+});
+document.querySelectorAll('input[name="sex"]').forEach(r=>{
+  r.addEventListener("change", calcScore);
+});
+$("copy").addEventListener("click", copyResult);
+$("reset").addEventListener("click", resetAll);
+$("print").addEventListener("click", ()=>{ window.print(); });
+
+calcScore();
+</script>
+</body>
+</html>
